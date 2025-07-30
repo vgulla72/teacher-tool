@@ -1,0 +1,1 @@
+Code to extract text from all files in a directory, chunk it, create embeddings, store faiss index and then use LLM to generate a summary content on a topic using the search results from the content as context
