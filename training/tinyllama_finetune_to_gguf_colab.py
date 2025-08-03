@@ -1,0 +1,91 @@
+# 🧠 Colab Script: Fine-Tune TinyLlama-Chat on Ramayana/Mahabharata Corpus with LoRA and Export to GGUF
+
+# ✅ Step 1: Install Dependencies
+!pip install -q transformers datasets peft accelerate trl
+
+
+# Read uploaded file (assumes one .txt file)
+corpus_path = list(uploaded.keys())[0]
+with open(corpus_path, "r", encoding="utf-8") as f:
+    text_chunks = f.read().split("\n\n")
+
+from datasets import Dataset
+dataset = Dataset.from_dict({"text": text_chunks})
+
+# ✅ Step 3: Load Model & Tokenizer (TinyLlama-Chat)
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from peft import prepare_model_for_kbit_training, LoraConfig, get_peft_model
+
+model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype="auto").to("cuda")
+
+# ✅ Step 4: Prepare LoRA
+model = prepare_model_for_kbit_training(model)
+peft_config = LoraConfig(
+    r=8,
+    lora_alpha=16,
+    target_modules=["q_proj", "v_proj"],
+    lora_dropout=0.1,
+    bias="none",
+    task_type="CAUSAL_LM"
+)
+model = get_peft_model(model, peft_config)
+
+# ✅ Step 5: Tokenize Dataset
+def tokenize(batch):
+    return tokenizer(batch["text"], truncation=True, padding=False)
+
+tokenized_dataset = dataset.map(tokenize, batched=True)
+
+# ✅ Step 6: Fine-Tune with SFTTrainer
+from transformers import TrainingArguments
+from trl import SFTTrainer
+
+training_args = TrainingArguments(
+    output_dir="./tinyllama-finetuned",
+    per_device_train_batch_size=1,
+    gradient_accumulation_steps=16,
+    num_train_epochs=1,
+    learning_rate=2e-5,
+    logging_steps=10,
+    save_steps=100,
+    save_total_limit=2,
+    fp16=False
+)
+
+trainer = SFTTrainer(
+    model=model,
+    args=training_args,
+    train_dataset=tokenized_dataset
+)
+trainer.train()
+
+# ✅ Step 7: Merge LoRA Adapters
+from peft import PeftModel
+base_model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype="auto").to("cuda")
+merged = PeftModel.from_pretrained(base_model, "./tinyllama-finetuned").merge_and_unload()
+merged.save_pretrained("./tinyllama-merged")
+tokenizer.save_pretrained("./tinyllama-merged")
+
+# ✅ Step 8: Build llama.cpp and Convert to GGUF
+!sudo apt-get update && sudo apt-get install -y cmake build-essential
+!git clone https://github.com/ggerganov/llama.cpp.git
+%cd llama.cpp
+!cmake -B build
+!cmake --build build --config Release
+
+# ✅ Step 9: Download GGUF Conversion Script and Run
+!wget https://raw.githubusercontent.com/ggerganov/llama.cpp/master/scripts/convert-hf-to-gguf.py
+!python3 convert-hf-to-gguf.py ../tinyllama-merged --outfile ../tinyllama-custom.gguf --outtype f16
+
+# ✅ Step 10: Download the GGUF File
+from google.colab import files
+files.download("/content/tinyllama-custom.gguf")
+
+# ✅ Step 11: Use Merged Model in Code with a Prompt (before GGUF conversion)
+from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
+model = AutoModelForCausalLM.from_pretrained("./tinyllama-merged").to("cuda")
+tokenizer = AutoTokenizer.from_pretrained("./tinyllama-merged")
+pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
+print(pipe("Tell me about Hanuman in Ramayana")[0]["generated_text"])
