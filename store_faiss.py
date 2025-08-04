@@ -17,7 +17,14 @@ def store_faiss():
         for line in infile:
             data = json.loads(line)
             vector = np.array(data["embedding"], dtype="float32")
-            index.add(np.array([vector]))
+
+            # Normalize the vector for cosine similarity
+            norm = np.linalg.norm(vector)
+            if norm == 0:
+                continue  # skip empty vectors
+            vector /= norm
+
+            index.add(np.array([vector]))  # now using cosine similarity
             metadata.append({
                 "file": data["file"],
                 "chunk_id": data["chunk_id"],

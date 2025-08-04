@@ -27,7 +27,8 @@ def embed_query(query: str):
         input=[query],
         model=EMBEDDING_MODEL
     )
-    return response.data[0].embedding
+    embedding = np.array(response.data[0].embedding, dtype="float32")
+    return embedding / np.linalg.norm(embedding)  # normalize for cosine similarity
 
 def search_index(query_embedding, index, metadata, k=TOP_K):
     vector = np.array([query_embedding], dtype="float32")
@@ -50,7 +51,7 @@ Below is a selection of curated teaching materials. Use this content to:
 
 Always ensure your response:
 - Is factually correct.
-- Uses clear and concise academic language.
+- Uses clear and concise language.
 - Reflects the tone and depth suitable for undergraduate or graduate-level  courses.
 
 ------------------------
