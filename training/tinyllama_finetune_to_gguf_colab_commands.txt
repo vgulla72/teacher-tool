@@ -5,8 +5,7 @@
 
 
 # Read uploaded file (assumes one .txt file)
-corpus_path = list(uploaded.keys())[0]
-with open(corpus_path, "r", encoding="utf-8") as f:
+with open("../data/dutt.txt", "r", encoding="utf-8") as f:
     text_chunks = f.read().split("\n\n")
 
 from datasets import Dataset
@@ -43,7 +42,7 @@ from transformers import TrainingArguments
 from trl import SFTTrainer
 
 training_args = TrainingArguments(
-    output_dir="./tinyllama-finetuned",
+    output_dir="./tinyllama-epic",
     per_device_train_batch_size=1,
     gradient_accumulation_steps=16,
     num_train_epochs=1,
@@ -64,7 +63,7 @@ trainer.train()
 # ✅ Step 7: Merge LoRA Adapters
 from peft import PeftModel
 base_model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype="auto").to("cuda")
-merged = PeftModel.from_pretrained(base_model, "./tinyllama-finetuned").merge_and_unload()
+merged = PeftModel.from_pretrained(base_model, "./tinyllama-epic").merge_and_unload()
 merged.save_pretrained("./tinyllama-merged")
 tokenizer.save_pretrained("./tinyllama-merged")
 
